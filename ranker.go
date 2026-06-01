@@ -8,18 +8,24 @@ import (
 )
 
 type fieldConfig struct {
-	b      float64
-	weight float64
+	// B controls the strength of stream length normalizations.
+	// Use Ranker.SetB to safely set its value.
+	B float64 `json:"b"`
+
+	Weight float64 `json:"weight"`
 }
 
-type BM25F struct {
-	k1            float64
-	fieldsConfigs map[string]*fieldConfig
+type Ranker struct {
+	// K1 controls how much frequent terms affect scores.
+	// Use SetK1 to safely set its value.
+	K1 float64 `json:"k1"`
+
+	Fields map[string]*fieldConfig `json:"fields"`
 }
 
-// NewBM25F creates a new BM25F with sane defaults.
-func NewBM25F() *BM25F {
-	return &BM25F{k1: 1.2}
+// NewRanker creates a new Ranker with sane defaults.
+func NewRanker() *Ranker {
+	return &Ranker{K1: 1.2}
 }
 
 // SetB sets the `b` parameter of the algorithm.
@@ -30,11 +36,11 @@ func NewBM25F() *BM25F {
 // With 1, stream lengths are fully normalized.
 // For most corpora, a value between 0.5 and 0.8 is good.
 // The default is 0.72.
-func (bm *BM25F) SetB(field string, b float64) error {
+func (bm *Ranker) SetB(field string, b float64) error {
 	if b < 0 || b > 1 {
 		return fmt.Errorf("out of range: %f", b)
 	}
-	bm.ensureFieldConfig(field).b = b
+	bm.ensureFieldConfig(field).B = b
 	return nil
 }
 
@@ -46,30 +52,30 @@ func (bm *BM25F) SetB(field string, b float64) error {
 // With a high value, frequent terms affect scores more.
 // For most corpora, a value between 1.2 and 2 is good.
 // If NewBM25F was used to create the BM25F, then the default is 1.2.
-func (bm *BM25F) SetK1(k1 float64) error {
+func (bm *Ranker) SetK1(k1 float64) error {
 	if k1 < 0 {
 		return fmt.Errorf("out of range: %f", k1)
 	}
-	bm.k1 = k1
+	bm.K1 = k1
 	return nil
 }
 
 // SetWeight sets the relative weight of the field.
 //
 // The default is 0, so this must be called to consider a field.
-func (bm *BM25F) SetWeight(field string, weight float64) {
-	bm.ensureFieldConfig(field).weight = weight
+func (bm *Ranker) SetWeight(field string, weight float64) {
+	bm.ensureFieldConfig(field).Weight = weight
 }
 
-func (bm *BM25F) ensureFieldConfig(name string) *fieldConfig {
-	if bm.fieldsConfigs == nil {
-		bm.fieldsConfigs = map[string]*fieldConfig{}
+func (bm *Ranker) ensureFieldConfig(name string) *fieldConfig {
+	if bm.Fields == nil {
+		bm.Fields = map[string]*fieldConfig{}
 	}
 
-	fc, ok := bm.fieldsConfigs[name]
+	fc, ok := bm.Fields[name]
 	if !ok {
-		fc = &fieldConfig{b: 0.72}
-		bm.fieldsConfigs[name] = fc
+		fc = &fieldConfig{B: 0.72}
+		bm.Fields[name] = fc
 	}
 
 	return fc
@@ -88,7 +94,7 @@ type Result struct {
 // Rank returns document results sorted by how well they match the query.
 // The best match is first. Equal matches are sorted lexigraphically by id.
 // Documents that do not match the query are excluded.
-func (bm *BM25F) Rank(corpus Corpus, query []string) []Result {
+func (bm *Ranker) Rank(corpus Corpus, query []string) []Result {
 	results := bm.Score(corpus, query)
 
 	// Remove results that are not a match.
@@ -110,7 +116,7 @@ func (bm *BM25F) Rank(corpus Corpus, query []string) []Result {
 // Score calculates how well each document matches the query.
 // The results include every document and are unsorted—to remove non-matches
 // and sort the results, use Rank or do it yourself.
-func (bm *BM25F) Score(corpus Corpus, query []string) []Result {
+func (bm *Ranker) Score(corpus Corpus, query []string) []Result {
 	// Deduplicate query
 	slices.Sort(query)
 	query = slices.Compact(query)
@@ -133,7 +139,7 @@ func (bm *BM25F) Score(corpus Corpus, query []string) []Result {
 		for i := range results {
 			result := &results[i]
 			termFreq := bm.termFrequency(corpus, result.Document, term)
-			saturation := termFreq / (bm.k1 * idf)
+			saturation := termFreq / (bm.K1 * idf)
 			result.Score += saturation * idf
 		}
 	}
@@ -142,7 +148,7 @@ func (bm *BM25F) Score(corpus Corpus, query []string) []Result {
 }
 
 // idf returns the relative importance of a word based on its rarity.
-func (bm *BM25F) idf(c Corpus, term string) float64 {
+func (bm *Ranker) idf(c Corpus, term string) float64 {
 	// For the IDF, we apply a modified Robertson/Sparck Jones formula across
 	// all streams. There are rare scenarios where this does not yield good
 	// results. We will ignore the problem until it shows itself in practice.
@@ -153,8 +159,8 @@ func (bm *BM25F) idf(c Corpus, term string) float64 {
 
 // termFrequency returns the normalized weighted frequency of a term within the
 // document across all streams.
-func (bm *BM25F) termFrequency(c Corpus, doc Document, term string) (result float64) {
-	for field, config := range bm.fieldsConfigs {
+func (bm *Ranker) termFrequency(c Corpus, doc Document, term string) (result float64) {
+	for field, config := range bm.Fields {
 		avgStreamLen := bm.avgStreamLength(c, field)
 		if avgStreamLen == 0.0 {
 			continue
@@ -164,16 +170,16 @@ func (bm *BM25F) termFrequency(c Corpus, doc Document, term string) (result floa
 
 		// Normalize results when the stream length is far from average.
 		streamLen := float64(s.Length)
-		lengthNorm := 1 - config.b + config.b*streamLen/avgStreamLen
+		lengthNorm := 1 - config.B + config.B*streamLen/avgStreamLen
 
 		// Simple weighted summation with normalization.
 		termFreq := float64(s.TermCounts[term])
-		result += config.weight * termFreq / lengthNorm
+		result += config.Weight * termFreq / lengthNorm
 	}
 	return
 }
 
-func (bm *BM25F) avgStreamLength(c Corpus, field string) float64 {
+func (bm *Ranker) avgStreamLength(c Corpus, field string) float64 {
 	if docCount := len(c.Documents); docCount > 0 {
 		return float64(c.TotalLengths[field]) / float64(docCount)
 	}

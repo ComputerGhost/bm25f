@@ -14,6 +14,7 @@ Go implementation of BM25F algorithm.
 * Free parameters `k1` and `b` are customizable but have sane defaults.
 * Data can be attached to documents and returned alongside them in results.
 * `Rank` implements a default sorting and pruning behavior.
+* `Corpus` and `Ranker` can be serialized to and from JSON.
 
 ## Limitations
 
@@ -22,12 +23,8 @@ BM25F only scores documents based on how closely they match a query.
 ### Tokenizing
 
 Tokenizing documents and queries is out of scope.
-
-I like [clipperhouse/uax29](https://github.com/clipperhouse/uax29).
-It implements UAX #29 rules and is good enough for most scenarios.
-
-I am working on my own tokenizer for my [Musings](https://github.com/subtributary/musings) product,
-but even that is using UAX #29 as a base.
+For this, I recommend UAX #29 as a starting point.
+I like the [clipperhouse/uax29](https://github.com/clipperhouse/uax29) implementation.
 
 ### Sorting and pruning non-matches
 
@@ -50,23 +47,19 @@ helloDoc := bm25f.Document{}
 helloDoc.SetStream("title", []string{"hello"})
 helloDoc.SetStream("body", []string{"hello", "world"})
 helloDoc.SetAttachment("att_title", "hello")
-
-natureDoc := bm25f.Document{}
-natureDoc.SetStream("title", []string{"nature"})
-natureDoc.SetStream("body", []string{"blue", "tulip", "blue", "sky", "world"})
-natureDoc.SetAttachment("att_title", "nature")
 ```
-
-> [!TIP]
-> The corpus can be serialized to and from JSON for easier saving and loading.
 
 Create the BM25F algorithm:
 
 ```go
-bm := bm25f.NewBM25F()
+bm := bm25f.NewRanker()
 bm.SetWeight("title", 2.0)
 bm.SetWeight("body", 1.0)
 ```
+
+> [!TIP]
+> Both the corpus and ranker can be serialized to and from JSON.
+> Use this for easy saving and loading.
 
 Now search:
 
@@ -78,4 +71,3 @@ for result := range results {
 	fmt.Printf("%s -- %s", id, title)
 }
 ```
-

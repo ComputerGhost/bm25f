@@ -9,27 +9,27 @@ import (
 	"github.com/computerghost/bm25f"
 )
 
-func TestBM25F(t *testing.T) {
+func TestRanker(t *testing.T) {
 	t.Parallel()
 
 	t.Run("zero value", func(t *testing.T) {
-		_ = (&bm25f.BM25F{}).SetK1(0.0)
-		_ = (&bm25f.BM25F{}).SetB("", 0.0)
-		(&bm25f.BM25F{}).SetWeight("", 0.0)
+		_ = (&bm25f.Ranker{}).SetK1(0.0)
+		_ = (&bm25f.Ranker{}).SetB("", 0.0)
+		(&bm25f.Ranker{}).SetWeight("", 0.0)
 	})
 
 	t.Run("config values out of range", func(t *testing.T) {
-		bm := bm25f.NewBM25F()
+		bm := bm25f.NewRanker()
 		if err := bm.SetK1(-1); err == nil {
 			t.Error("expected error for k1 = -1")
 		}
 
-		bm = bm25f.NewBM25F()
+		bm = bm25f.NewRanker()
 		if err := bm.SetB("", -1); err == nil {
 			t.Error("expected error for b = -1")
 		}
 
-		bm = bm25f.NewBM25F()
+		bm = bm25f.NewRanker()
 		if err := bm.SetB("", 1.1); err == nil {
 			t.Error("expected error for b = 1.1")
 		}
@@ -39,7 +39,7 @@ func TestBM25F(t *testing.T) {
 func TestBM25F_Rank(t *testing.T) {
 	t.Parallel()
 
-	bm := bm25f.NewBM25F()
+	bm := bm25f.NewRanker()
 	bm.SetWeight("title", 2.0)
 	bm.SetWeight("body", 1.0)
 	_ = bm.SetB("title", 0)
