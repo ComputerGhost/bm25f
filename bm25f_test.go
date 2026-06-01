@@ -1,6 +1,7 @@
 package bm25f_test
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"testing"
@@ -56,6 +57,8 @@ func TestBM25F_Rank(t *testing.T) {
 	natureDoc.SetStream("title", []string{"nature"})
 	natureDoc.SetStream("body", []string{"blue", "tulip", "blue", "sky", "world"})
 
+	const nonzero = 1.0
+
 	tests := []struct {
 		name      string
 		documents map[string]bm25f.Document
@@ -81,7 +84,10 @@ func TestBM25F_Rank(t *testing.T) {
 				"empty1": emptyDoc,
 			},
 			query: "test",
-			want:  []bm25f.Result{},
+			want: []bm25f.Result{
+				{Id: "empty1", Score: 0},
+				{Id: "empty2", Score: 0},
+			},
 		},
 		{
 			name: "single match",
@@ -92,7 +98,8 @@ func TestBM25F_Rank(t *testing.T) {
 			query: "tulip",
 			want: []bm25f.Result{
 				// Only natureDoc has the word "tulip".
-				{Id: "nature", Document: natureDoc},
+				{Id: "nature", Score: nonzero},
+				{Id: "empty", Score: 0},
 			},
 		},
 		{
@@ -106,8 +113,9 @@ func TestBM25F_Rank(t *testing.T) {
 			want: []bm25f.Result{
 				// helloDoc and natureDoc both have one "word" in the body,
 				// so they are sorted alphabetically by title.
-				{Id: "hello", Document: helloDoc},
-				{Id: "nature", Document: natureDoc},
+				{Id: "hello", Score: nonzero},
+				{Id: "nature", Score: nonzero},
+				{Id: "empty", Score: 0},
 			},
 		},
 		{
@@ -121,8 +129,9 @@ func TestBM25F_Rank(t *testing.T) {
 			want: []bm25f.Result{
 				// natureDoc and helloDoc both contain the word "blue",
 				// but the word is more frequent in natureDoc.
-				{Id: "nature", Document: natureDoc},
-				{Id: "hello", Document: helloDoc},
+				{Id: "nature", Score: nonzero},
+				{Id: "hello", Score: nonzero},
+				{Id: "empty", Score: 0},
 			},
 		},
 		{
@@ -136,18 +145,11 @@ func TestBM25F_Rank(t *testing.T) {
 			want: []bm25f.Result{
 				// natureDoc and helloDoc both contain the world "blue",
 				// but helloDoc also contains "hello" in its title.
-				{Id: "hello", Document: helloDoc},
-				{Id: "nature", Document: natureDoc},
+				{Id: "hello", Score: nonzero},
+				{Id: "nature", Score: nonzero},
+				{Id: "empty", Score: 0},
 			},
 		},
-	}
-
-	extractNames := func(src []bm25f.Result) []string {
-		results := make([]string, len(src))
-		for i, result := range src {
-			results[i] = result.Id
-		}
-		return results
 	}
 
 	for _, tt := range tests {
@@ -159,12 +161,30 @@ func TestBM25F_Rank(t *testing.T) {
 				corpus.Upsert(filename, document)
 			}
 
-			results := bm.Rank(corpus, strings.Split(tt.query, " "))
+			scores := bm.Score(corpus, strings.Split(tt.query, " "))
 
-			gotNames := extractNames(results)
-			wantNames := extractNames(tt.want)
-			if !slices.Equal(gotNames, wantNames) {
-				t.Errorf("Rank: got %#v, want %#v", gotNames, wantNames)
+			if len(scores) != len(tt.want) {
+				t.Errorf("expected %d results, got %d", len(tt.want), len(scores))
+			}
+
+			// Sort the results descending by score.
+			slices.SortFunc(scores, func(a, b bm25f.Result) int {
+				if c := cmp.Compare(b.Score, a.Score); c != 0 {
+					return c
+				}
+				return cmp.Compare(a.Id, b.Id)
+			})
+
+			for i, got := range scores {
+				want := tt.want[i]
+				if got.Id != want.Id {
+					t.Errorf("rank #%d: expected %s got %s", i, want.Id, got.Id)
+				}
+				if want.Score == 0 && got.Score != 0 {
+					t.Errorf("%q score: expected 0 got %v", got.Id, got.Score)
+				} else if want.Score == nonzero && got.Score == 0 {
+					t.Errorf("%q score: expected nonzero, got 0", got.Id)
+				}
 			}
 		})
 	}
