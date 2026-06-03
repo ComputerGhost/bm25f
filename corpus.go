@@ -1,100 +1,285 @@
 package bm25f
 
+import (
+	"encoding/json"
+	"maps"
+	"slices"
+)
+
 type Corpus struct {
-	Documents map[string]Document `json:"documents"`
+	documents map[string]*Document
 
-	// DocsWithTerm are the number of documents containing each term.
-	DocsWithTerm map[string]int `json:"docs_with_term"`
+	// docsWithTerm are the number of documents containing each term.
+	docsWithTerm map[string]int
 
-	// TotalLengths are the total lengths of each field across all documents.
-	TotalLengths map[string]int `json:"total_lengths"`
+	// totalLengths are the total lengths of each field across all documents.
+	totalLengths map[string]int
+}
+
+// NewCorpus creates an empty Corpus.
+func NewCorpus() *Corpus {
+	c := &Corpus{}
+	c.ensureInitialized()
+	return c
+}
+
+func (c *Corpus) ensureInitialized() {
+	if c.documents == nil {
+		c.documents = make(map[string]*Document)
+	}
+	if c.docsWithTerm == nil {
+		c.docsWithTerm = make(map[string]int)
+	}
+	if c.totalLengths == nil {
+		c.totalLengths = make(map[string]int)
+	}
+}
+
+// Document returns the document with the given ID,
+// or (nil, false) if not found.
+func (c *Corpus) Document(id string) (*Document, bool) {
+	doc, ok := c.documents[id]
+	return doc, ok
+}
+
+// DocumentIDs returns all document IDs in the corpus in lexicographic order.
+func (c *Corpus) DocumentIDs() []string {
+	ids := slices.Collect(maps.Keys(c.documents))
+	slices.Sort(ids)
+	return ids
+}
+
+// Len returns the number of documents in the corpus.
+func (c *Corpus) Len() int {
+	return len(c.documents)
+}
+
+func (c *Corpus) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Documents map[string]*Document `json:"documents"`
+	}{
+		Documents: c.documents,
+	})
+}
+
+func (c *Corpus) UnmarshalJSON(data []byte) error {
+	state := struct {
+		Documents map[string]*Document `json:"documents"`
+	}{}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+
+	c.documents = state.Documents
+	c.docsWithTerm = make(map[string]int)
+	c.totalLengths = make(map[string]int)
+
+	for _, doc := range c.documents {
+		c.addStats(doc)
+	}
+
+	return nil
 }
 
 // Remove removes all data associated with a document.
 func (c *Corpus) Remove(id string) {
-	doc, ok := c.Documents[id]
+	c.ensureInitialized()
+
+	doc, ok := c.documents[id]
 	if !ok {
 		return
 	}
 
-	delete(c.Documents, id)
+	delete(c.documents, id)
+	c.removeStats(doc)
+}
 
-	for f, s := range doc.Streams {
-		c.TotalLengths[f] -= s.Length
+// Upsert processes and adds a document into the corpus.
+//
+// The document must not be changed after passing it to this function.
+func (c *Corpus) Upsert(id string, document *Document) {
+	c.ensureInitialized()
+
+	if old, ok := c.documents[id]; ok {
+		c.removeStats(old)
 	}
 
-	for _, s := range doc.Streams {
-		for term := range s.TermCounts {
-			c.DocsWithTerm[term]--
-			if c.DocsWithTerm[term] == 0 {
-				delete(c.DocsWithTerm, term)
+	c.documents[id] = document
+	c.addStats(document)
+}
+
+func (c *Corpus) addStats(doc *Document) {
+	for name, field := range doc.fields {
+		c.totalLengths[name] += field.length
+
+		for term := range field.termCounts {
+			c.docsWithTerm[term]++
+		}
+	}
+}
+
+func (c *Corpus) removeStats(doc *Document) {
+	for name, field := range doc.fields {
+		c.totalLengths[name] -= field.length
+		if c.totalLengths[name] == 0 {
+			delete(c.totalLengths, name)
+		}
+
+		for term := range field.termCounts {
+			c.docsWithTerm[term]--
+			if c.docsWithTerm[term] == 0 {
+				delete(c.docsWithTerm, term)
 			}
 		}
 	}
 }
 
-// Upsert processes and adds a document into the corpus.
-func (c *Corpus) Upsert(id string, document Document) {
-	if c.Documents == nil {
-		c.Documents = make(map[string]Document)
-		c.DocsWithTerm = make(map[string]int)
-		c.TotalLengths = make(map[string]int)
+type DocumentOption func(d *Document)
+
+func WithField(name string, tokens []string) DocumentOption {
+	return func(d *Document) {
+		d.SetField(name, tokens)
 	}
+}
 
-	c.Remove(id)
-
-	c.Documents[id] = document
-
-	for f, s := range document.Streams {
-		c.TotalLengths[f] += s.Length
-	}
-
-	for _, s := range document.Streams {
-		for term := range s.TermCounts {
-			c.DocsWithTerm[term]++
-		}
+func WithMetadata(name string, text string) DocumentOption {
+	return func(d *Document) {
+		d.SetMetadata(name, text)
 	}
 }
 
 // Document is a searchable entity in the corpus.
-// It can have multiple independently-configured streams that contribute to its
+// It can have multiple independently configured fields that contribute to its
 // search ranking.
 type Document struct {
-	Attachments map[string]string  `json:"attachments"`
-	Streams     map[string]*stream `json:"streams"`
+	metadata map[string]string
+	fields   map[string]*Field
 }
 
-// SetAttachment sets data that is not parsed or used by BM25F.
-func (d *Document) SetAttachment(id string, text string) {
-	if d.Attachments == nil {
-		d.Attachments = make(map[string]string)
+func NewDocument(opts ...DocumentOption) *Document {
+	d := &Document{}
+	d.ensureInitialized()
+
+	for _, opt := range opts {
+		opt(d)
 	}
 
-	d.Attachments[id] = text
+	return d
 }
 
-// SetStream sets a document stream to represent the given tokens.
-func (d *Document) SetStream(field string, tokens []string) {
-	if d.Streams == nil {
-		d.Streams = make(map[string]*stream)
+func (d *Document) ensureInitialized() {
+	if d.metadata == nil {
+		d.metadata = make(map[string]string)
 	}
+	if d.fields == nil {
+		d.fields = make(map[string]*Field)
+	}
+}
+
+// Count returns the number of times a term appears in a field.
+func (d *Document) Count(field, term string) int {
+	if f := d.fields[field]; f != nil {
+		return f.termCounts[term]
+	}
+	return 0
+}
+
+// FieldLen returns the length of a field (in terms).
+func (d *Document) FieldLen(field string) int {
+	if f := d.fields[field]; f != nil {
+		return f.length
+	}
+	return 0
+}
+
+// FieldNames returns the names of all document fields in lexicographic order.
+func (d *Document) FieldNames() []string {
+	names := slices.Collect(maps.Keys(d.fields))
+	slices.Sort(names)
+	return names
+}
+
+// SetField sets a document field to represent the given tokens.
+func (d *Document) SetField(name string, tokens []string) {
+	d.ensureInitialized()
 
 	termCounts := make(map[string]int)
 	for _, token := range tokens {
 		termCounts[token]++
 	}
 
-	d.Streams[field] = &stream{
-		Length:     len(tokens),
-		TermCounts: termCounts,
+	d.fields[name] = &Field{
+		length:     len(tokens),
+		termCounts: termCounts,
 	}
 }
 
-// stream represents the tokens in one of a document's streams.
-// A document can have multiple streams, each referenced by its field name.
+// Metadata gets a metadata entry associated with the document.
+// It is the same value previously passed to SetMetadata.
+func (d *Document) Metadata(name string) (string, bool) {
+	text, ok := d.metadata[name]
+	return text, ok
+}
+
+// SetMetadata sets data that is not parsed or used by BM25F,
+// but it is included in results from BM25F.Score.
+func (d *Document) SetMetadata(name string, text string) {
+	d.ensureInitialized()
+	d.metadata[name] = text
+}
+
+func (d *Document) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Metadata map[string]string `json:"metadata"`
+		Fields   map[string]*Field `json:"fields"`
+	}{
+		Metadata: d.metadata,
+		Fields:   d.fields,
+	})
+}
+
+func (d *Document) UnmarshalJSON(data []byte) error {
+	state := struct {
+		Metadata map[string]string `json:"metadata"`
+		Fields   map[string]*Field `json:"fields"`
+	}{}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+
+	d.metadata = state.Metadata
+	d.fields = state.Fields
+	return nil
+}
+
+// Field is a part of a document, such as the title, byline, or body.
 //
-// These should be created via Document.SetStream.
-type stream struct {
-	Length     int            `json:"length"`
-	TermCounts map[string]int `json:"term_counts"`
+// Use Document.SetField to set a field value for a document.
+type Field struct {
+	length     int
+	termCounts map[string]int
+}
+
+func (f *Field) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Length     int            `json:"length"`
+		TermCounts map[string]int `json:"term_counts"`
+	}{
+		Length:     f.length,
+		TermCounts: f.termCounts,
+	})
+}
+
+func (f *Field) UnmarshalJSON(data []byte) error {
+	state := struct {
+		Length     int            `json:"length"`
+		TermCounts map[string]int `json:"term_counts"`
+	}{}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+
+	f.length = state.Length
+	f.termCounts = state.TermCounts
+	return nil
 }
