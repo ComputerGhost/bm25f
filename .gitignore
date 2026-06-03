@@ -31,6 +31,8 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Bin files
+bin/
 
 # Data file created by example program
 index.json
