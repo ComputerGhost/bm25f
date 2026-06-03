@@ -17,8 +17,8 @@ type BM25F struct {
 	fields map[string]*fieldConfig
 }
 
-func New() BM25F {
-	return BM25F{
+func New() *BM25F {
+	return &BM25F{
 		k1:     1.2,
 		fields: make(map[string]*fieldConfig),
 	}
@@ -133,7 +133,7 @@ func (r *Result) Metadata(name string) (string, bool) {
 // Score calculates how well each document matches the query.
 // The results include every document and are unsorted—to remove non-matches
 // and sort the results, use Rank or do it yourself.
-func (bm *BM25F) Score(corpus Corpus, query []string) []Result {
+func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 	// Deduplicate query
 	query = slices.Clone(query)
 	slices.Sort(query)
@@ -182,7 +182,7 @@ func (bm *BM25F) Score(corpus Corpus, query []string) []Result {
 }
 
 // idf returns the relative importance of a word based on its rarity.
-func (bm *BM25F) idf(c Corpus, term string) float64 {
+func (bm *BM25F) idf(c *Corpus, term string) float64 {
 	// For the IDF, we apply a modified Robertson/Sparck Jones formula across
 	// all fields. There are rare scenarios where this does not yield good
 	// results. We will ignore the problem until it shows itself in practice.
@@ -206,9 +206,9 @@ func (bm *BM25F) termFrequency(
 			continue
 		}
 
-		// Normalize results when the stream length is far from average.
-		streamLen := float64(doc.FieldLen(field))
-		lengthNorm := 1 - config.B + config.B*streamLen/avgFieldLen
+		// Normalize results when the field length is far from average.
+		fieldLen := float64(doc.FieldLen(field))
+		lengthNorm := 1 - config.B + config.B*fieldLen/avgFieldLen
 
 		// Simple weighted summation with normalization.
 		termFreq := float64(doc.Count(field, term))

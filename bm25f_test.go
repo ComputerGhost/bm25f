@@ -151,7 +151,7 @@ func TestBM25F_Rank(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			corpus := bm25f.Corpus{}
+			corpus := bm25f.NewCorpus()
 			for filename, document := range tt.documents {
 				corpus.Upsert(filename, document)
 			}
