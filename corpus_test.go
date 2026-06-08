@@ -2,6 +2,7 @@ package bm25f_test
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestCorpus(t *testing.T) {
 	if corpus.Len() != 3 {
 		t.Errorf("Len() = %d, want 3", corpus.Len())
 	}
-	if _, ok := corpus.Document("one"); !ok {
+	if _, ok := corpus.Documents()["one"]; !ok {
 		t.Fatal(`Document("one") ok = false, want true`)
 	}
 
@@ -42,7 +43,7 @@ func TestCorpus(t *testing.T) {
 	if corpus.Len() != 2 {
 		t.Errorf("Len() after remove = %d, want 2", corpus.Len())
 	}
-	if _, ok := corpus.Document("one"); ok {
+	if _, ok := corpus.Documents()["one"]; ok {
 		t.Error(`Document("one") ok = true after Remove, want false`)
 	}
 
@@ -66,11 +67,8 @@ func TestCorpus_ZeroValue(t *testing.T) {
 	tests := func(t *testing.T, corpus *bm25f.Corpus) {
 		t.Helper()
 
-		if _, ok := corpus.Document(""); ok {
-			t.Errorf(`Document("") ok = true, want false`)
-		}
-		if count := len(corpus.DocumentIDs()); count != 0 {
-			t.Errorf("DocumentIDs length = %d, want 0", count)
+		if _, ok := corpus.Documents()[""]; ok {
+			t.Errorf(`Documents()[""] ok = true, want false`)
 		}
 		if corpus.Len() != 0 {
 			t.Errorf("Len() = %d, want 0", corpus.Len())
@@ -90,7 +88,7 @@ func TestCorpus_ZeroValue(t *testing.T) {
 	tests(t, newCorpus)
 }
 
-func TestCorpus_DocumentIDs(t *testing.T) {
+func TestCorpus_Documents(t *testing.T) {
 	t.Parallel()
 
 	corpus := bm25f.Corpus{}
@@ -98,10 +96,12 @@ func TestCorpus_DocumentIDs(t *testing.T) {
 	corpus.Upsert("alpha", &bm25f.Document{})
 	corpus.Upsert("bravo", &bm25f.Document{})
 
-	got := corpus.DocumentIDs()
-	want := []string{"alpha", "bravo", "charlie"}
-	if !slices.Equal(got, want) {
-		t.Errorf("DocumentIDs() = %v, want %v", got, want)
+	gotIds := slices.Collect(maps.Keys(corpus.Documents()))
+	slices.Sort(gotIds)
+
+	wantIds := []string{"alpha", "bravo", "charlie"}
+	if !slices.Equal(gotIds, wantIds) {
+		t.Errorf("Documents() IDs = %v, want %v", gotIds, wantIds)
 	}
 }
 
@@ -137,13 +137,14 @@ func TestCorpus_JSON(t *testing.T) {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
 
-	if _, ok := rebuilt.Document("hello"); !ok {
+	if _, ok := rebuilt.Documents()["hello"]; !ok {
 		t.Errorf(`Document("hello") after JSON ok = false, want true`)
 	}
 
 	wantIDs := []string{"goodbye", "hello"}
-	if got := rebuilt.DocumentIDs(); !slices.Equal(got, wantIDs) {
-		t.Errorf("DocumentIDs() after JSON = %v, want = %v", got, wantIDs)
+	gotIds := slices.Collect(maps.Keys(rebuilt.Documents()))
+	if !slices.Equal(gotIds, wantIDs) {
+		t.Errorf("Documents() IDs after JSON = %v, want = %v", gotIds, wantIDs)
 	}
 
 	if got := rebuilt.Len(); got != 2 {

@@ -35,18 +35,10 @@ func (c *Corpus) ensureInitialized() {
 	}
 }
 
-// Document returns the document with the given ID,
-// or (nil, false) if not found.
-func (c *Corpus) Document(id string) (*Document, bool) {
-	doc, ok := c.documents[id]
-	return doc, ok
-}
-
-// DocumentIDs returns all document IDs in the corpus in lexicographic order.
-func (c *Corpus) DocumentIDs() []string {
-	ids := slices.Collect(maps.Keys(c.documents))
-	slices.Sort(ids)
-	return ids
+// Documents returns a map from document id to Document.
+func (c *Corpus) Documents() map[string]*Document {
+	c.ensureInitialized()
+	return c.documents
 }
 
 // Len returns the number of documents in the corpus.
