@@ -86,6 +86,7 @@ slices.SortFunc(scores, func(a, b bm25f.Result) int {
 
 fmt.Println("Results:")
 for i, result := range scores {
-    fmt.Printf("  #%d: %s: %s\n", i, result.ID, result.Metadata("title"))
+    title := result.Document.Metadata("title")
+    fmt.Printf("  #%d: %s: %s\n", i, result.ID, title)
 }
 ```

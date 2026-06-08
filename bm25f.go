@@ -113,6 +113,7 @@ func (bm *BM25F) UnmarshalJSON(data []byte) error {
 }
 
 type Result struct {
+	// ID is the identifier passed to Corpus.Upsert to create the document.
 	ID string
 
 	// Score indicates how well the document matches the query.
@@ -122,12 +123,9 @@ type Result struct {
 	// a higher value indicates a better match.
 	Score float64
 
-	document *Document
-}
-
-// Metadata returns the metadata associated with the document in the result.
-func (r *Result) Metadata(name string) (string, bool) {
-	return r.document.Metadata(name)
+	// Document is the parsed document in the corpus.
+	// This should be treated as immutable here.
+	Document *Document
 }
 
 // Score calculates how well each document matches the query.
@@ -144,7 +142,7 @@ func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 	for id, doc := range corpus.documents {
 		results = append(results, Result{
 			ID:       id,
-			document: doc,
+			Document: doc,
 		})
 	}
 
@@ -168,7 +166,7 @@ func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 		idf := bm.idf(corpus, term)
 		for i := range results {
 			result := &results[i]
-			termFreq := bm.termFrequency(result.document, term, avgFieldLengths)
+			termFreq := bm.termFrequency(result.Document, term, avgFieldLengths)
 			if termFreq == 0 {
 				continue
 			}
