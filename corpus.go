@@ -36,6 +36,7 @@ func (c *Corpus) ensureInitialized() {
 }
 
 // Documents returns a map from document id to Document.
+// The returned map should be considered immutable.
 func (c *Corpus) Documents() map[string]*Document {
 	c.ensureInitialized()
 	return c.documents
@@ -87,7 +88,6 @@ func (c *Corpus) Remove(id string) {
 }
 
 // Upsert processes and adds a document into the corpus.
-//
 // The document must not be changed after passing it to this function.
 func (c *Corpus) Upsert(id string, document *Document) {
 	c.ensureInitialized()
@@ -107,6 +107,14 @@ func (c *Corpus) addStats(doc *Document) {
 		for term := range field.termCounts {
 			c.docsWithTerm[term]++
 		}
+	}
+}
+
+func (c *Corpus) clone() *Corpus {
+	return &Corpus{
+		documents:    maps.Clone(c.documents),
+		docsWithTerm: maps.Clone(c.docsWithTerm),
+		totalLengths: maps.Clone(c.totalLengths),
 	}
 }
 

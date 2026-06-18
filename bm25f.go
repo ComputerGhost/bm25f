@@ -131,15 +131,15 @@ type Result struct {
 // Score calculates how well each document matches the query.
 // The results include every document and are unsorted—to remove non-matches
 // and sort the results, use Rank or do it yourself.
-func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
+func (bm *BM25F) Score(c Corpus, query []string) []Result {
 	// Deduplicate query
 	query = slices.Clone(query)
 	slices.Sort(query)
 	query = slices.Compact(query)
 
 	// Init the results with document data and 0 scores.
-	results := make([]Result, 0, len(corpus.documents))
-	for id, doc := range corpus.documents {
+	results := make([]Result, 0, c.Len())
+	for id, doc := range c.Documents() {
 		results = append(results, Result{
 			ID:       id,
 			Document: doc,
@@ -149,8 +149,8 @@ func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 	// Cache avg field lengths instead of recalculating when needed.
 	avgFieldLengths := make(map[string]float64)
 	for field := range bm.fields {
-		if docCount := len(corpus.documents); docCount != 0 {
-			totalLength := float64(corpus.totalLengths[field])
+		if docCount := c.Len(); docCount != 0 {
+			totalLength := float64(c.TotalLength(field))
 			avgFieldLengths[field] = totalLength / float64(docCount)
 		}
 	}
@@ -159,11 +159,11 @@ func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 	// saturation within the document. These scores are summed per document for
 	// the final document scores.
 	for _, term := range query {
-		if corpus.docsWithTerm[term] == 0 {
+		if c.DocsWithTerm(term) == 0 {
 			continue
 		}
 
-		idf := bm.idf(corpus, term)
+		idf := bm.idf(c, term)
 		for i := range results {
 			result := &results[i]
 			termFreq := bm.termFrequency(result.Document, term, avgFieldLengths)
@@ -180,12 +180,12 @@ func (bm *BM25F) Score(corpus *Corpus, query []string) []Result {
 }
 
 // idf returns the relative importance of a word based on its rarity.
-func (bm *BM25F) idf(c *Corpus, term string) float64 {
+func (bm *BM25F) idf(c Corpus, term string) float64 {
 	// For the IDF, we apply a modified Robertson/Sparck Jones formula across
 	// all fields. There are rare scenarios where this does not yield good
 	// results. We will ignore the problem until it shows itself in practice.
-	docCount := float64(len(c.documents))
-	docFreq := float64(c.docsWithTerm[term])
+	docCount := float64(c.Len())
+	docFreq := float64(c.DocsWithTerm(term))
 	return math.Log((docCount-docFreq+0.5)/(docFreq+0.5) + 1)
 }
 

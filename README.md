@@ -14,6 +14,7 @@ Go implementation of BM25F algorithm.
 * Free parameters `k1` and `b` are customizable but have sane defaults.
 * Metadata can be attached to documents and is returned with search results.
 * `Corpus` and `BM25F` can be serialized to and from JSON.
+* `SyncCorpus` for thread-safe corpus operations.
 
 ## Limitations
 
@@ -43,13 +44,13 @@ Create the corpus:
 corpus := bm25f.NewCorpus()
 corpus.Upsert("hello.md", bm25f.NewDocument(
     bm25f.WithField("title", []string{"Hello"}),
-    bm25f.WithField("body", []string{"hello", "world"})
-    bm25f.WithMetadata("title", "Hello")
+    bm25f.WithField("body", []string{"hello", "world"}),
+    bm25f.WithMetadata("title", "Hello"),
 ))
 corpus.Upsert("nature.md", bm25f.NewDocument(
     bm25f.WithField("title", []string{"Nature"}),
-    bm25f.WithField("body", []string{"blue", "world"})
-    bm25f.WithMetadata("title", "Nature")
+    bm25f.WithField("body", []string{"blue", "world"}),
+    bm25f.WithMetadata("title", "Nature"),
 ))
 ```
 
@@ -89,4 +90,20 @@ for i, result := range scores {
     title := result.Document.Metadata("title")
     fmt.Printf("  #%d: %s: %s\n", i, result.ID, title)
 }
+```
+
+If you need thread-safe operations, wrap the corpus in a `SyncCorpus`:
+
+```go
+sc := bm25f.NewSyncCorpus(corpus)
+
+sc.Remove("hello.md")
+
+sc.Upsert("threads.md", bm25f.NewDocument(
+    bm25f.WithField("title", []string{"Threads"}),
+    bm25f.WithField("body", []string{"safe", "multithreading"}),
+    bm25f.WithMetadata("title", "Threads"),
+))
+
+scores := index.Rank.Score(sc.Snapshot(), query)
 ```
