@@ -6,7 +6,7 @@ import (
 )
 
 type SyncCorpus struct {
-	snapshot   *Corpus
+	snapshot   Corpus
 	snapshotMu sync.RWMutex
 	cloneMu    sync.Mutex
 }
@@ -14,10 +14,24 @@ type SyncCorpus struct {
 // NewSyncCorpus wraps a corpus in thread-safe functions.
 // The corpus passed to this function must not be modified directly after this
 // function call; instead, the functions of SyncCorpus should be used.
-func NewSyncCorpus(corpus *Corpus) *SyncCorpus {
+func NewSyncCorpus(corpus Corpus) *SyncCorpus {
 	return &SyncCorpus{
-		snapshot: corpus.clone(),
+		snapshot: corpus.Clone(),
 	}
+}
+
+func (c *SyncCorpus) Clone() Corpus {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+
+	return NewSyncCorpus(c.snapshot)
+}
+
+func (c *SyncCorpus) DocsWithTerm(term string) int {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+
+	return c.snapshot.DocsWithTerm(term)
 }
 
 // Documents returns a map from document id to Document.
@@ -26,7 +40,7 @@ func (c *SyncCorpus) Documents() map[string]*Document {
 	c.snapshotMu.RLock()
 	defer c.snapshotMu.RUnlock()
 
-	return c.Documents()
+	return c.snapshot.Documents()
 }
 
 // Len returns the number of documents in the corpus.
@@ -44,8 +58,35 @@ func (c *SyncCorpus) MarshalJSON() ([]byte, error) {
 	return json.Marshal(c.snapshot)
 }
 
+// Snapshot returns a readonly snapshot of the corpus at its current state.
+// The returned value should be considered immutable.
+//
+// This snapshot should be passed to BM25F.Score for speed.
+func (c *SyncCorpus) Snapshot() Corpus {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+
+	return c.snapshot
+}
+
+// Remove removes all data associated with a document.
+func (c *SyncCorpus) Remove(id string) {
+	c.modify(func(ss Corpus) {
+		ss.Remove(id)
+	})
+}
+
+func (c *SyncCorpus) TotalLength(field string) int {
+	c.snapshotMu.RLock()
+	defer c.snapshotMu.RUnlock()
+
+	return c.snapshot.TotalLength(field)
+}
+
+// UnmarshalJSON unmarshals the SyncCorpus from data using a SimpleCorpus as
+// the wrapped corpus to synchronize.
 func (c *SyncCorpus) UnmarshalJSON(data []byte) error {
-	ss := &Corpus{}
+	ss := &SimpleCorpus{}
 	if err := json.Unmarshal(data, ss); err != nil {
 		return err
 	}
@@ -60,27 +101,18 @@ func (c *SyncCorpus) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Remove removes all data associated with a document.
-func (c *SyncCorpus) Remove(id string) {
-	c.modify(func(ss *Corpus) {
-		ss.Remove(id)
-	})
-}
-
-// Upsert processes and adds a document into the corpus.
-// The document must not be changed after passing it to this function.
 func (c *SyncCorpus) Upsert(id string, document *Document) {
-	c.modify(func(ss *Corpus) {
+	c.modify(func(ss Corpus) {
 		ss.Upsert(id, document)
 	})
 }
 
-func (c *SyncCorpus) modify(action func(s *Corpus)) {
+func (c *SyncCorpus) modify(action func(s Corpus)) {
 	c.cloneMu.Lock()
 	defer c.cloneMu.Unlock()
 
 	c.snapshotMu.RLock()
-	clone := c.snapshot.clone()
+	clone := c.snapshot.Clone()
 	c.snapshotMu.RUnlock()
 
 	action(clone)
@@ -88,15 +120,4 @@ func (c *SyncCorpus) modify(action func(s *Corpus)) {
 	c.snapshotMu.Lock()
 	c.snapshot = clone
 	c.snapshotMu.Unlock()
-}
-
-// Snapshot returns a readonly snapshot of the corpus at its current state.
-// The returned value should be considered immutable.
-//
-// This snapshot should be passed to BM25F.Score for speed.
-func (c *SyncCorpus) Snapshot() *Corpus {
-	c.snapshotMu.RLock()
-	defer c.snapshotMu.RUnlock()
-
-	return c.snapshot
 }

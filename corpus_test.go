@@ -9,10 +9,14 @@ import (
 	"github.com/computerghost/bm25f"
 )
 
-func TestCorpus(t *testing.T) {
+func TestSimpleCorpus(t *testing.T) {
 	t.Parallel()
+	testCorpus(t, bm25f.NewSimpleCorpus())
+}
 
-	corpus := bm25f.NewCorpus()
+func testCorpus(t *testing.T, corpus bm25f.Corpus) {
+	t.Helper()
+
 	corpus.Upsert("one", bm25f.NewDocument(
 		bm25f.WithField("body", []string{"one"}),
 	))
@@ -61,37 +65,14 @@ func TestCorpus(t *testing.T) {
 	}
 }
 
-func TestCorpus_ZeroValue(t *testing.T) {
+func TestSimpleCorpus_Documents(t *testing.T) {
 	t.Parallel()
-
-	tests := func(t *testing.T, corpus *bm25f.Corpus) {
-		t.Helper()
-
-		if _, ok := corpus.Documents()[""]; ok {
-			t.Errorf(`Documents()[""] ok = true, want false`)
-		}
-		if corpus.Len() != 0 {
-			t.Errorf("Len() = %d, want 0", corpus.Len())
-		}
-
-		corpus.Remove("missing")
-		if corpus.Len() != 0 {
-			t.Errorf("Len() after remove missing = %d, want 0", corpus.Len())
-		}
-	}
-
-	emptyCorpus := bm25f.Corpus{}
-	tests(t, &emptyCorpus)
-
-	// Test unaltered NewCorpus too since it should have the same behavior.
-	newCorpus := bm25f.NewCorpus()
-	tests(t, newCorpus)
+	testCorpusDocuments(t, bm25f.NewSimpleCorpus())
 }
 
-func TestCorpus_Documents(t *testing.T) {
-	t.Parallel()
+func testCorpusDocuments(t *testing.T, corpus bm25f.Corpus) {
+	t.Helper()
 
-	corpus := bm25f.Corpus{}
 	corpus.Upsert("charlie", &bm25f.Document{})
 	corpus.Upsert("alpha", &bm25f.Document{})
 	corpus.Upsert("bravo", &bm25f.Document{})
@@ -105,10 +86,14 @@ func TestCorpus_Documents(t *testing.T) {
 	}
 }
 
-func TestCorpus_JSON(t *testing.T) {
+func TestSimpleCorpus_JSON(t *testing.T) {
 	t.Parallel()
+	testCorpusJSON(t, bm25f.NewSimpleCorpus())
+}
 
-	corpus := bm25f.NewCorpus()
+func testCorpusJSON[C bm25f.Corpus](t *testing.T, corpus C) {
+	t.Helper()
+
 	corpus.Upsert("hello", &bm25f.Document{})
 	corpus.Upsert("goodbye", &bm25f.Document{})
 
@@ -132,7 +117,7 @@ func TestCorpus_JSON(t *testing.T) {
 		t.Error("marshaled corpus contains total_lengths, want only source documents")
 	}
 
-	var rebuilt bm25f.Corpus
+	var rebuilt C
 	if err := json.Unmarshal(data, &rebuilt); err != nil {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
@@ -143,6 +128,7 @@ func TestCorpus_JSON(t *testing.T) {
 
 	wantIDs := []string{"goodbye", "hello"}
 	gotIds := slices.Collect(maps.Keys(rebuilt.Documents()))
+	slices.Sort(gotIds)
 	if !slices.Equal(gotIds, wantIDs) {
 		t.Errorf("Documents() IDs after JSON = %v, want = %v", gotIds, wantIDs)
 	}

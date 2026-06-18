@@ -6,48 +6,73 @@ import (
 	"slices"
 )
 
-type Corpus struct {
-	documents map[string]*Document
+type Corpus interface {
+	// Clone returns a shallow copy of the corpus.
+	// That is, documents inside the corpus are not cloned.
+	Clone() Corpus
 
-	// docsWithTerm are the number of documents containing each term.
+	// DocsWithTerm returns the number of documents containing a term.
+	DocsWithTerm(term string) int
+
+	// Documents returns a map from document id to Document.
+	// The returned map should be considered immutable.
+	Documents() map[string]*Document
+
+	// Len returns the number of documents in the corpus.
+	Len() int
+
+	// TotalLength returns the total length of a field across all documents.
+	TotalLength(field string) int
+
+	// Remove removes all data associated with a document.
+	Remove(id string)
+
+	// Upsert processes and adds a document into the corpus.
+	// The document must not be changed after passing it to this function.
+	Upsert(id string, document *Document)
+}
+
+// NewCorpus creates an empty SimpleCorpus.
+func NewCorpus() Corpus {
+	return NewSimpleCorpus()
+}
+
+type SimpleCorpus struct {
+	documents    map[string]*Document
 	docsWithTerm map[string]int
-
-	// totalLengths are the total lengths of each field across all documents.
 	totalLengths map[string]int
 }
 
-// NewCorpus creates an empty Corpus.
-func NewCorpus() *Corpus {
-	c := &Corpus{}
-	c.ensureInitialized()
-	return c
-}
-
-func (c *Corpus) ensureInitialized() {
-	if c.documents == nil {
-		c.documents = make(map[string]*Document)
-	}
-	if c.docsWithTerm == nil {
-		c.docsWithTerm = make(map[string]int)
-	}
-	if c.totalLengths == nil {
-		c.totalLengths = make(map[string]int)
+// NewSimpleCorpus creates an empty SimpleCorpus.
+func NewSimpleCorpus() *SimpleCorpus {
+	return &SimpleCorpus{
+		documents:    make(map[string]*Document),
+		docsWithTerm: make(map[string]int),
+		totalLengths: make(map[string]int),
 	}
 }
 
-// Documents returns a map from document id to Document.
-// The returned map should be considered immutable.
-func (c *Corpus) Documents() map[string]*Document {
-	c.ensureInitialized()
+func (c *SimpleCorpus) Clone() Corpus {
+	return &SimpleCorpus{
+		documents:    maps.Clone(c.documents),
+		docsWithTerm: maps.Clone(c.docsWithTerm),
+		totalLengths: maps.Clone(c.totalLengths),
+	}
+}
+
+func (c *SimpleCorpus) DocsWithTerm(term string) int {
+	return c.docsWithTerm[term]
+}
+
+func (c *SimpleCorpus) Documents() map[string]*Document {
 	return c.documents
 }
 
-// Len returns the number of documents in the corpus.
-func (c *Corpus) Len() int {
+func (c *SimpleCorpus) Len() int {
 	return len(c.documents)
 }
 
-func (c *Corpus) MarshalJSON() ([]byte, error) {
+func (c *SimpleCorpus) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Documents map[string]*Document `json:"documents"`
 	}{
@@ -55,7 +80,11 @@ func (c *Corpus) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (c *Corpus) UnmarshalJSON(data []byte) error {
+func (c *SimpleCorpus) TotalLength(field string) int {
+	return c.totalLengths[field]
+}
+
+func (c *SimpleCorpus) UnmarshalJSON(data []byte) error {
 	state := struct {
 		Documents map[string]*Document `json:"documents"`
 	}{}
@@ -74,10 +103,7 @@ func (c *Corpus) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Remove removes all data associated with a document.
-func (c *Corpus) Remove(id string) {
-	c.ensureInitialized()
-
+func (c *SimpleCorpus) Remove(id string) {
 	doc, ok := c.documents[id]
 	if !ok {
 		return
@@ -87,11 +113,7 @@ func (c *Corpus) Remove(id string) {
 	c.removeStats(doc)
 }
 
-// Upsert processes and adds a document into the corpus.
-// The document must not be changed after passing it to this function.
-func (c *Corpus) Upsert(id string, document *Document) {
-	c.ensureInitialized()
-
+func (c *SimpleCorpus) Upsert(id string, document *Document) {
 	if old, ok := c.documents[id]; ok {
 		c.removeStats(old)
 	}
@@ -100,7 +122,7 @@ func (c *Corpus) Upsert(id string, document *Document) {
 	c.addStats(document)
 }
 
-func (c *Corpus) addStats(doc *Document) {
+func (c *SimpleCorpus) addStats(doc *Document) {
 	for name, field := range doc.fields {
 		c.totalLengths[name] += field.length
 
@@ -110,15 +132,7 @@ func (c *Corpus) addStats(doc *Document) {
 	}
 }
 
-func (c *Corpus) clone() *Corpus {
-	return &Corpus{
-		documents:    maps.Clone(c.documents),
-		docsWithTerm: maps.Clone(c.docsWithTerm),
-		totalLengths: maps.Clone(c.totalLengths),
-	}
-}
-
-func (c *Corpus) removeStats(doc *Document) {
+func (c *SimpleCorpus) removeStats(doc *Document) {
 	for name, field := range doc.fields {
 		c.totalLengths[name] -= field.length
 		if c.totalLengths[name] == 0 {

@@ -50,13 +50,13 @@ func printUsage() {
 }
 
 type Index struct {
-	Corpus *bm25f.Corpus `json:"corpus"`
-	Ranker *bm25f.BM25F  `json:"ranker"`
+	Corpus *bm25f.SimpleCorpus `json:"corpus"`
+	Ranker *bm25f.BM25F        `json:"ranker"`
 }
 
 func indexMain(dir, indexFile string) error {
 	index := Index{
-		Corpus: bm25f.NewCorpus(),
+		Corpus: bm25f.NewSimpleCorpus(),
 		Ranker: bm25f.New(),
 	}
 	_ = index.Ranker.SetWeight("content", 1.0)

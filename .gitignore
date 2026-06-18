@@ -33,6 +33,7 @@ go.work.sum
 
 # Bin files
 bin/
+main
 
 # Data file created by example program
 index.json
