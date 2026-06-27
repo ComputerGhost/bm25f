@@ -7,10 +7,6 @@ import (
 )
 
 type Corpus interface {
-	// Clone returns a shallow copy of the corpus.
-	// That is, documents inside the corpus are not cloned.
-	Clone() Corpus
-
 	// DocsWithTerm returns the number of documents containing a term.
 	DocsWithTerm(term string) int
 
@@ -49,14 +45,6 @@ func NewSimpleCorpus() *SimpleCorpus {
 		documents:    make(map[string]*Document),
 		docsWithTerm: make(map[string]int),
 		totalLengths: make(map[string]int),
-	}
-}
-
-func (c *SimpleCorpus) Clone() Corpus {
-	return &SimpleCorpus{
-		documents:    maps.Clone(c.documents),
-		docsWithTerm: maps.Clone(c.docsWithTerm),
-		totalLengths: maps.Clone(c.totalLengths),
 	}
 }
 
@@ -129,6 +117,16 @@ func (c *SimpleCorpus) addStats(doc *Document) {
 		for term := range field.termCounts {
 			c.docsWithTerm[term]++
 		}
+	}
+}
+
+// clone returns a shallow copy of the corpus.
+// That is, documents inside the corpus are not cloned.
+func (c *SimpleCorpus) clone() *SimpleCorpus {
+	return &SimpleCorpus{
+		documents:    maps.Clone(c.documents),
+		docsWithTerm: maps.Clone(c.docsWithTerm),
+		totalLengths: maps.Clone(c.totalLengths),
 	}
 }
 

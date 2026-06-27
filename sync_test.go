@@ -10,15 +10,15 @@ import (
 
 func TestSyncCorpus(t *testing.T) {
 	t.Parallel()
-	testCorpus(t, bm25f.NewSyncCorpus(bm25f.NewCorpus()))
+	testCorpus(t, bm25f.NewSyncCorpus(bm25f.NewSimpleCorpus()))
 }
 
 func TestSyncCorpus_Documents(t *testing.T) {
 	t.Parallel()
-	testCorpusDocuments(t, bm25f.NewSyncCorpus(bm25f.NewCorpus()))
+	testCorpusDocuments(t, bm25f.NewSyncCorpus(bm25f.NewSimpleCorpus()))
 }
 
 func TestSyncCorpus_JSON(t *testing.T) {
 	t.Parallel()
-	testCorpusJSON(t, bm25f.NewSyncCorpus(bm25f.NewCorpus()))
+	testCorpusJSON(t, bm25f.NewSyncCorpus(bm25f.NewSimpleCorpus()))
 }

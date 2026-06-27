@@ -6,7 +6,7 @@ import (
 )
 
 type SyncCorpus struct {
-	snapshot   Corpus
+	snapshot   *SimpleCorpus
 	snapshotMu sync.RWMutex
 	cloneMu    sync.Mutex
 }
@@ -14,17 +14,10 @@ type SyncCorpus struct {
 // NewSyncCorpus wraps a corpus in thread-safe functions.
 // The corpus passed to this function must not be modified directly after this
 // function call; instead, the functions of SyncCorpus should be used.
-func NewSyncCorpus(corpus Corpus) *SyncCorpus {
+func NewSyncCorpus(corpus *SimpleCorpus) *SyncCorpus {
 	return &SyncCorpus{
-		snapshot: corpus.Clone(),
+		snapshot: corpus.clone(),
 	}
-}
-
-func (c *SyncCorpus) Clone() Corpus {
-	c.snapshotMu.RLock()
-	defer c.snapshotMu.RUnlock()
-
-	return NewSyncCorpus(c.snapshot)
 }
 
 func (c *SyncCorpus) DocsWithTerm(term string) int {
@@ -112,7 +105,7 @@ func (c *SyncCorpus) modify(action func(s Corpus)) {
 	defer c.cloneMu.Unlock()
 
 	c.snapshotMu.RLock()
-	clone := c.snapshot.Clone()
+	clone := c.snapshot.clone()
 	c.snapshotMu.RUnlock()
 
 	action(clone)
